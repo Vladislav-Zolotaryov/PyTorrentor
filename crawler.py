@@ -3,6 +3,11 @@ from html.parser import HTMLParser
 from html import escape
 from abc import ABCMeta, abstractmethod
 
+crawler = KickassCrawler()
+result = crawler.getFirstTorrent('Game Of Thrones')
+
+with open('test.torrrent', 'wb') as out:
+	out.write(result.content)
 
 class TorrentCrawler:
 	__metaclass__ = ABCMeta
@@ -40,10 +45,3 @@ class KickassLinkExctractor(HTMLParser):
 		if tag == "a" and "idownload" in attrs.get("class", ""):
 			if attrs["href"] != '#':
 				self.links.append(attrs["href"])
-
-
-crawler = KickassCrawler()
-result = crawler.searchFor('Game Of Thrones')
-
-with open('test.torrrent', 'wb') as out:
-	out.write(result.content)
