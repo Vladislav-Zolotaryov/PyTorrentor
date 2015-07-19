@@ -51,27 +51,31 @@ class RepetableSchedule():
         self.method = method
         self.args = args
         self.kargs = kargs
-        self.timer = None
+        self.scheduler = sched.scheduler(time.time, time.sleep)
         self.running = False
+        self.lastEvent = None
 
     def __runMethod(self):
         self.method(*self.args, **self.kargs)
-        self.__schedule()
+        self.reschedule()
 
-    def __schedule(self):
+    def __shedule(self, delay):
+         self.lastEvent = self.scheduler.enter(delay, RepetableSchedule.default_priority, self.__runMethod)
+
+    def reschedule(self):
         if self.running:
-            self.timer = Timer(self.lastDelay, self.__runMethod, *self.args, **self.kargs)
-            self.timer.start()
+            self.__shedule(self.lastDelay)
            
     def schedule(self, delay):
         if self.running:
             raise Exception('Already running')
         self.running = True
         self.lastDelay = delay
-        self.__schedule()
-        
+        self.lastEvent = self.__shedule(delay)
+        self.scheduler.run()
+
     def stop(self):
-        self.timer.cancel()
+        self.scheduler.cancel(self.lastEvent)
         self.running = False
 
 
@@ -88,6 +92,8 @@ print('Started!')
 rpSched = RepetableSchedule(getNewGameOfThronesTorrent)
 rpSched.schedule(2)
 
-cancelShed = RepetableSchedule(rpSched.stop)
+print('Crap!')
+
+cancelShed = RepetableSchedule(rpShed.cancel)
 cancelShed.schedule(4)
 
