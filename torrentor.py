@@ -2,17 +2,18 @@ from abc import ABCMeta, abstractmethod
 from html import escape
 from html.parser import HTMLParser
 from threading import Timer
+from enum import Enum
 import requests
-import sched, time
-import tkinter
-import ConfigParser
+import configparser
+
 
 class TorrentCrawler:
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def getFirstTorrent(self, itemName): 
+    def getFirstTorrent(self, itemName):
         pass
+
 
 class KickassCrawler(TorrentCrawler):
     def __init__(self):
@@ -24,12 +25,13 @@ class KickassCrawler(TorrentCrawler):
     def getRequestUrl(self, itemName):
         return self.searchUrl + itemName + self.sorting
 
-    def getFirstTorrent(self, itemName): 
+    def getFirstTorrent(self, itemName):
         self.itemName = escape(itemName)
         response = requests.get(self.getRequestUrl(self.itemName))
         parser = KickassLinkExctractor()
         parser.feed(response.text)
         return requests.get(parser.links[0])
+
 
 class KickassLinkExctractor(HTMLParser):
     def reset(self):
@@ -44,9 +46,8 @@ class KickassLinkExctractor(HTMLParser):
             if attrs["href"] != '#':
                 self.links.append(attrs["href"])
 
-class RepetableSchedule():
 
-    default_priority = 1
+class RepetableSchedule():
 
     def __init__(self, method, *args, **kargs):
         self.method = method
@@ -81,26 +82,33 @@ class AppConfig():
     main_section = 'Main'
 
     def __init__(self):
-        self.config = ConfigParser.ConfigParser()
+        self.config = configparser.ConfigParser()
         self.config.read('config.ini')
-    
+
     def getTorrentsDir(self):
         return self.config(AppConfig.main_section, 'torrents_download_dir')
 
 
-def getNewGameOfThronesTorrent():
-    print('Fetching fresh Game Of Thrones')
-    crawler = KickassCrawler()
-    result = crawler.getFirstTorrent('Game Of Thrones')
-    with open('test.torrrent', 'wb') as out:
-        out.write(result.content)
-    print('Done')
+class FetchTask():
 
-print('Started!')
+    states = Enum('states', IDLE, RUNNING, DONE)
+    results = Enum('results', SUCCESS, FAIL)
 
-rpSched = RepetableSchedule(getNewGameOfThronesTorrent)
-rpSched.schedule(2)
+    def __init__(self, appConfig, crawler, item, outputDir):
+        self.appConfig = appConfig
+        self.crawler = crawler
+        self.item = item
+        self.outputDir = outputDir
+        self.state = states.IDLE
 
-cancelShed = RepetableSchedule(rpSched.stop)
-cancelShed.schedule(4)
-
+    def execute(self):
+        self.state = states.RUNNING
+        try:
+            result = self.crawler.getFirstTorrent(self.item)
+            outFilename = self.appConfig.getTorrentsDir() + '/' + self.item + '.torrrent',
+            with open(outFilename, 'wb') as out:
+                out.write(result.content)
+        except:
+            return results.FAIL
+        self.state = states.DONE
+        return results.SUCCESS
