@@ -5,6 +5,8 @@ from threading import Timer
 from enum import Enum
 import requests
 import configparser
+import json
+import traceback
 
 
 class TorrentCrawler:
@@ -19,8 +21,7 @@ class KickassCrawler(TorrentCrawler):
     def __init__(self):
         self.searchUrl = 'http://kat.cr/usearch/'
         self.sorting = '?field=seeders&sorder=desc'
-        self.magnetLinkClass = 'imagnet'
-        self.regularTorrentClass = 'idownload'
+        self.itemName = None
 
     def getRequestUrl(self, itemName):
         return self.searchUrl + itemName + self.sorting
@@ -30,10 +31,17 @@ class KickassCrawler(TorrentCrawler):
         response = requests.get(self.getRequestUrl(self.itemName))
         parser = KickassLinkExctractor()
         parser.feed(response.text)
-        return requests.get(parser.links[0])
+        print('Trying to download by link: ' + repr(parser.links[0]))
+        user_agent = {'User-agent': 'Mozilla/5.0'}
+        result = requests.get(parser.links[0], headers=user_agent)
+        print(result)
+        result.raise_for_status()
+        return result
 
 
 class KickassLinkExctractor(HTMLParser):
+    regularTorrentClass = 'ka-arrow-down'
+ 
     def reset(self):
         HTMLParser.reset(self)
         self.links = []
@@ -42,7 +50,8 @@ class KickassLinkExctractor(HTMLParser):
         if tag == "a":
             attrs = dict(attrs)
 
-        if tag == "a" and "idownload" in attrs.get("class", ""):
+        if tag == "a" and "data-download" in attrs:
+            print(attrs['href'])
             if attrs["href"] != '#':
                 self.links.append(attrs["href"])
 
@@ -86,29 +95,56 @@ class AppConfig():
         self.config.read('config.ini')
 
     def getTorrentsDir(self):
-        return self.config(AppConfig.main_section, 'torrents_download_dir')
+        return self.config.get(AppConfig.main_section, 'torrents_download_dir')
 
 
 class FetchTask():
 
-    states = Enum('states', IDLE, RUNNING, DONE)
-    results = Enum('results', SUCCESS, FAIL)
-
-    def __init__(self, appConfig, crawler, item, outputDir):
+    def __init__(self, appConfig, crawler, item):
         self.appConfig = appConfig
         self.crawler = crawler
         self.item = item
-        self.outputDir = outputDir
-        self.state = states.IDLE
+        self.state = States.IDLE
+        self.scheduler = RepetableSchedule(self.__execute)
 
     def execute(self):
-        self.state = states.RUNNING
+        self.scheduler.schedule(2)
+
+    def __execute(self):
+        print('Trying to get ' + self.item)
+        self.state = States.RUNNING
         try:
             result = self.crawler.getFirstTorrent(self.item)
-            outFilename = self.appConfig.getTorrentsDir() + '/' + self.item + '.torrrent',
-            with open(outFilename, 'wb') as out:
+            outFilename = self.item + '.torrent'
+            with open(outFilename, 'wb+') as out:
                 out.write(result.content)
-        except:
-            return results.FAIL
-        self.state = states.DONE
-        return results.SUCCESS
+        except Exception as e:
+            print(traceback.format_exc())
+            return ResultStatus.FAIL
+        self.state = States.DONE
+        self.scheduler.stop()
+        print('Done')
+        return ResultStatus.SUCCESS
+
+
+class TaskManager():
+
+    def __init__(self):
+        self.__loadTasks()
+
+    def __loadTasks(self):
+        with open('appdata.json', 'r') as inFile:
+            tasks = json.loads(inFile.read())['tasks']
+            for item in tasks:
+                FetchTask(appConfig, KickassCrawler(), item).execute()
+
+
+class States(Enum):
+    IDLE, RUNNING, DONE = range(3)
+
+
+class ResultStatus(Enum):
+    SUCCESS, FAIL = range(2)
+
+appConfig = AppConfig()
+taskManager = TaskManager()

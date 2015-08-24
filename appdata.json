@@ -1,4 +1,4 @@
-items_to_download : [
-    'Game of Thrones',
-    'Mr Robot'
-]
+{ "tasks" : [
+    "Game of Thrones",
+    "Mr Robot"
+]}
